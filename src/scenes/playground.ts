@@ -2,7 +2,15 @@ import { Container, Graphics, Text } from 'pixi.js'
 import type { Scene } from '../core/scene'
 import type { Input } from '../core/input'
 import { WIDTH, HEIGHT, type GameApp } from '../core/app'
-import { palette, randomAccent, TAU, type AccentName, type Juice, type TweenHandle } from '../juice'
+import {
+  palette,
+  randomAccent,
+  TAU,
+  type AccentName,
+  type Emitter,
+  type Juice,
+  type TweenHandle,
+} from '../juice'
 
 /**
  * Playground - acceptance test, ne demo za druge.
@@ -15,6 +23,13 @@ import { palette, randomAccent, TAU, type AccentName, type Juice, type TweenHand
 const SHAPE_COUNT = 10
 const NEIGHBOUR_RADIUS = 140
 const RESPAWN_DELAY = 0.6
+
+/**
+ * Cestica po sekundi po trailu. Deset oblika × 55/s × zivot ~0.55s drzi oko
+ * 300-500 aktivnih cestica - tocno raspon u kojem se mjeri fps iz definicije
+ * gotovog.
+ */
+const TRAIL_RATE = 55
 
 /** Brzina live tuninga blooma, u jedinicama po sekundi drzanja tipke. */
 const THRESHOLD_RATE = 0.3
@@ -29,6 +44,7 @@ interface Shape {
   radius: number
   accent: AccentName
   punch: TweenHandle | null
+  trail: Emitter | null
 }
 
 function spawnShape(): Shape {
@@ -55,6 +71,7 @@ function spawnShape(): Shape {
     radius,
     accent,
     punch: null,
+    trail: null,
   }
 }
 
@@ -90,6 +107,8 @@ export function createPlayground(app: GameApp, input: Input, juice: Juice): Scen
 
   /** Stanje [0] toggla - sve off naspram sve on, ne toggle po sustavu. */
   let allOn = true
+  /** [T] - trailovi, ujedno stress test za mjerenje fps-a na 500+ cestica. */
+  let trailsOn = false
 
   const hud = new Text({
     text: '',
@@ -97,10 +116,29 @@ export function createPlayground(app: GameApp, input: Input, juice: Juice): Scen
   })
   hud.position.set(12, 12)
 
+  /**
+   * Trail koristi `base` varijantu akcenta, a sam oblik `bright`. Zato jezgra
+   * glowa a trag ne - to je cijela poanta dvije varijante po akcentu, i drzi
+   * ekran citljivim na 500 cestica umjesto da postane bijela mrlja.
+   */
+  function attachTrail(shape: Shape): void {
+    shape.trail = particles.emitter({
+      follow: () => ({ x: shape.x, y: shape.y }),
+      rate: TRAIL_RATE,
+      color: palette.accent[shape.accent].base,
+      speed: [0, 30],
+      life: [0.35, 0.75],
+      size: [1.5, 3.5],
+      spread: TAU,
+      drag: 0.5,
+    })
+  }
+
   function addShape(): void {
     const shape = spawnShape()
     shapes.push(shape)
     container.addChild(shape.gfx)
+    if (trailsOn) attachTrail(shape)
   }
 
   /** Jedan klik demonstrira cijeli stack odjednom. */
@@ -108,6 +146,7 @@ export function createPlayground(app: GameApp, input: Input, juice: Juice): Scen
     const index = shapes.indexOf(shape)
     if (index < 0) return
     shapes.splice(index, 1)
+    shape.trail?.stop()
     container.removeChild(shape.gfx)
     shape.gfx.destroy()
 
@@ -159,6 +198,18 @@ export function createPlayground(app: GameApp, input: Input, juice: Juice): Scen
     if (input.pressed('5')) screenfx.enabled = !screenfx.enabled
     if (input.pressed('6')) audio.enabled = !audio.enabled
     if (input.pressed('m')) audio.muted = !audio.muted
+
+    if (input.pressed('t')) {
+      trailsOn = !trailsOn
+      for (const shape of shapes) {
+        if (trailsOn) {
+          attachTrail(shape)
+        } else {
+          shape.trail?.stop()
+          shape.trail = null
+        }
+      }
+    }
 
     if (input.pressed('0')) {
       allOn = !allOn
@@ -223,7 +274,7 @@ export function createPlayground(app: GameApp, input: Input, juice: Juice): Scen
       '',
       `[1] bloom ${flag(bloom.enabled)}   [2] particles ${flag(particles.enabled)}   [3] shake ${flag(shake.enabled)}`,
       `[4] tween ${flag(tweens.enabled)}   [5] screenfx ${flag(screenfx.enabled)}   [6] audio ${flag(audio.enabled)}`,
-      `[0] sve ${allOn ? 'OFF' : 'ON'}      [M] mute ${flag(!audio.muted)}`,
+      `[0] sve ${allOn ? 'OFF' : 'ON'}      [M] mute ${flag(!audio.muted)}      [T] trailovi ${flag(trailsOn)}`,
       '',
       `bloom threshold ${bloom.filter.threshold.toFixed(2)}   scale ${bloom.filter.bloomScale.toFixed(2)}`,
       `strelice gore/dolje = threshold, lijevo/desno = scale`,
@@ -245,6 +296,7 @@ export function createPlayground(app: GameApp, input: Input, juice: Juice): Scen
 
     exit() {
       app.ui.removeChild(hud)
+      for (const shape of shapes) shape.trail?.stop()
       container.removeChildren()
       shapes.length = 0
       particles.clear()
