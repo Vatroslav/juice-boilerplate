@@ -29,7 +29,14 @@ Playground (`src/scenes/playground.ts`) pali i gasi svaki sustav zasebno - razli
 
 ## Stanje
 
-U izradi. Jezgra (`core/`) i paleta rade; juice moduli stizu jedan po jedan.
+U izradi, ali sve postoji i vrti se. Jezgra i svih sest juice modula rade i prosudeni su u playgroundu (Chrome).
+
+Preostalo do gotovog:
+
+- Izmjeriti 60 fps na 500+ cestica uz ukljucen bloom ([T] u playgroundu).
+- Firefox - jos nije probao nitko.
+- Deploy na itch.
+- Napraviti mini-igru iz ovog templatea **bez ijedne izmjene u `core/` i `juice/`**. To je pravi test API-ja; ako igra mora dirati jezgru, jezgra nije gotova.
 
 ## Licenca
 
