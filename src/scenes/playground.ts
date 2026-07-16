@@ -3,16 +3,24 @@ import type { Scene } from '../core/scene'
 import type { Input } from '../core/input'
 import { WIDTH, HEIGHT, type GameApp } from '../core/app'
 import { palette, randomAccent, type AccentName } from '../juice/palette'
+import type { Bloom } from '../juice/bloom'
 
 /**
  * Playground - acceptance test, ne demo za druge.
  *
- * Zasad skelet: oblici iz palete se odbijaju, HUD radi, input radi. Svaki juice
- * modul koji stigne dobiva ovdje svoj toggle (tipke 1-6) i klik-reakciju, pa se
- * vidi na ekranu cim nastane.
+ * Svaki juice modul koji stigne dobiva ovdje svoj toggle (tipke 1-6) i svoju
+ * ulogu u klik-reakciji, pa se vidi na ekranu cim nastane. Razlika izmedu
+ * "sve off" i "sve on" je cijeli argument ovog projekta.
+ *
+ * Stanje: bloom [1] radi. Particles, shake, tween, screenfx, audio jos ne
+ * postoje - njihovi toggleovi stizu s modulima.
  */
 
 const SHAPE_COUNT = 10
+
+/** Brzina live tuninga blooma, u jedinicama po sekundi drzanja tipke. */
+const THRESHOLD_RATE = 0.3
+const SCALE_RATE = 0.8
 
 interface Shape {
   gfx: Graphics
@@ -50,16 +58,76 @@ function spawnShape(): Shape {
   }
 }
 
-export function createPlayground(app: GameApp, input: Input): Scene {
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max)
+}
+
+export function createPlayground(app: GameApp, input: Input, bloom: Bloom): Scene {
   const container = new Container()
   const shapes: Shape[] = []
+
+  /** Stanje [0] toggla - sve off naspram sve on, ne obicni toggle po sustavu. */
+  let allOn = true
 
   // HUD ide na `ui` - bez blooma, ostaje ostar.
   const hud = new Text({
     text: '',
-    style: { fontFamily: 'monospace', fontSize: 14, fill: palette.ink },
+    style: { fontFamily: 'monospace', fontSize: 13, fill: palette.ink, lineHeight: 18 },
   })
   hud.position.set(12, 12)
+
+  function tuneBloom(dt: number): void {
+    let dThreshold = 0
+    if (input.down('up')) dThreshold += THRESHOLD_RATE * dt
+    if (input.down('down')) dThreshold -= THRESHOLD_RATE * dt
+    if (dThreshold !== 0) {
+      bloom.filter.threshold = clamp(bloom.filter.threshold + dThreshold, 0, 1)
+    }
+
+    let dScale = 0
+    if (input.down('right')) dScale += SCALE_RATE * dt
+    if (input.down('left')) dScale -= SCALE_RATE * dt
+    if (dScale !== 0) {
+      bloom.filter.bloomScale = clamp(bloom.filter.bloomScale + dScale, 0, 4)
+    }
+  }
+
+  function moveShapes(dt: number): void {
+    for (const s of shapes) {
+      s.x += s.vx * dt
+      s.y += s.vy * dt
+
+      if (s.x - s.radius < 0) {
+        s.x = s.radius
+        s.vx = Math.abs(s.vx)
+      }
+      if (s.x + s.radius > WIDTH) {
+        s.x = WIDTH - s.radius
+        s.vx = -Math.abs(s.vx)
+      }
+      if (s.y - s.radius < 0) {
+        s.y = s.radius
+        s.vy = Math.abs(s.vy)
+      }
+      if (s.y + s.radius > HEIGHT) {
+        s.y = HEIGHT - s.radius
+        s.vy = -Math.abs(s.vy)
+      }
+
+      s.gfx.position.set(s.x, s.y)
+    }
+  }
+
+  function drawHud(): void {
+    const fps = Math.round(app.pixi.ticker.FPS)
+    const threshold = bloom.filter.threshold.toFixed(2)
+    const scale = bloom.filter.bloomScale.toFixed(2)
+    hud.text = [
+      `${fps} fps`,
+      `[1] bloom ${bloom.enabled ? 'ON ' : 'off'}   threshold ${threshold}   scale ${scale}`,
+      `strelice gore/dolje = threshold, lijevo/desno = scale`,
+    ].join('\n')
+  }
 
   return {
     container,
@@ -80,34 +148,15 @@ export function createPlayground(app: GameApp, input: Input): Scene {
     },
 
     update(dt: number) {
-      for (const s of shapes) {
-        s.x += s.vx * dt
-        s.y += s.vy * dt
-
-        if (s.x - s.radius < 0) {
-          s.x = s.radius
-          s.vx = Math.abs(s.vx)
-        }
-        if (s.x + s.radius > WIDTH) {
-          s.x = WIDTH - s.radius
-          s.vx = -Math.abs(s.vx)
-        }
-        if (s.y - s.radius < 0) {
-          s.y = s.radius
-          s.vy = Math.abs(s.vy)
-        }
-        if (s.y + s.radius > HEIGHT) {
-          s.y = HEIGHT - s.radius
-          s.vy = -Math.abs(s.vy)
-        }
-
-        s.gfx.position.set(s.x, s.y)
+      if (input.pressed('1')) bloom.enabled = !bloom.enabled
+      if (input.pressed('0')) {
+        allOn = !allOn
+        bloom.enabled = allOn
       }
 
-      const fps = Math.round(app.pixi.ticker.FPS)
-      const px = Math.round(input.pointer.x)
-      const py = Math.round(input.pointer.y)
-      hud.text = `${fps} fps    pointer ${px},${py}${input.pointer.down ? ' (down)' : ''}`
+      tuneBloom(dt)
+      moveShapes(dt)
+      drawHud()
     },
   }
 }
