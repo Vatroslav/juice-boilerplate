@@ -21,7 +21,17 @@ import {
  */
 
 const SHAPE_COUNT = 10
-const NEIGHBOUR_RADIUS = 140
+
+/**
+ * Bilo je 140 px, sto je pokrivalo 12% ekrana - prosjecno 1.1 susjeda, a 32%
+ * klikova nije punchnulo nista. Tween tako nije imao sto pokazati. 280 px
+ * pokriva pola ekrana, oko 4 susjeda po kliku.
+ */
+const NEIGHBOUR_RADIUS = 280
+
+/** Piksela po sekundi kojom val punch-a putuje od mjesta udarca. */
+const RIPPLE_SPEED = 700
+
 const RESPAWN_DELAY = 0.6
 
 /**
@@ -43,7 +53,7 @@ interface Shape {
   vy: number
   radius: number
   accent: AccentName
-  punch: TweenHandle | null
+  anim: TweenHandle | null
   trail: Emitter | null
 }
 
@@ -70,7 +80,7 @@ function spawnShape(): Shape {
     vy: Math.sin(angle) * speed,
     radius,
     accent,
-    punch: null,
+    anim: null,
     trail: null,
   }
 }
@@ -139,6 +149,12 @@ export function createPlayground(app: GameApp, input: Input, juice: Juice): Scen
     shapes.push(shape)
     container.addChild(shape.gfx)
     if (trailsOn) attachTrail(shape)
+
+    // Dolazak kroz tween: naraste od nista do pune velicine s malim prebacajem.
+    // Ovo je najcistiji demo tweena u playgroundu - dogada se sam, bez bursta i
+    // tresenja oko sebe. S ugasenim [4] oblik se samo pojavi, gotov.
+    shape.gfx.scale.set(0)
+    shape.anim = tweens.tween(shape.gfx.scale, { x: 1, y: 1 }, 0.35, { ease: 'backOut' })
   }
 
   /** Jedan klik demonstrira cijeli stack odjednom. */
@@ -169,13 +185,20 @@ export function createPlayground(app: GameApp, input: Input, juice: Juice): Scen
     audio.play('hit')
 
     for (const other of shapes) {
-      if (Math.hypot(other.x - shape.x, other.y - shape.y) > NEIGHBOUR_RADIUS) continue
-      // Otkazi prethodni punch i vrati scale na bazu - inace se dva punch-a
-      // preklope i oblik trajno odluta od svoje velicine.
-      other.punch?.cancel()
-      other.gfx.scale.set(1)
-      other.punch = tweens.punch(other.gfx, 0.35, 0.35)
-      audio.play('pop', { volume: 0.35 })
+      const distance = Math.hypot(other.x - shape.x, other.y - shape.y)
+      if (distance > NEIGHBOUR_RADIUS) continue
+
+      // Val, ne skupni trzaj: blizi oblici skoce prije daljih, pa se udarac
+      // vidi kako putuje kroz scenu. Ovo je tween, ne cestice.
+      tweens.after(distance / RIPPLE_SPEED, () => {
+        if (!shapes.includes(other)) return
+        // Otkazi prethodnu animaciju i vrati scale na bazu - inace se dva
+        // punch-a preklope i oblik trajno odluta od svoje velicine.
+        other.anim?.cancel()
+        other.gfx.scale.set(1)
+        other.anim = tweens.punch(other.gfx, 0.5, 0.4)
+        audio.play('pop', { volume: 0.35 })
+      })
     }
 
     tweens.after(RESPAWN_DELAY, addShape)
@@ -281,7 +304,8 @@ export function createPlayground(app: GameApp, input: Input, juice: Juice): Scen
       `bloom threshold ${bloom.filter.threshold.toFixed(2)}   scale ${bloom.filter.bloomScale.toFixed(2)}`,
       `strelice gore/dolje = threshold, lijevo/desno = scale`,
       '',
-      `klik na oblik = burst + shake + flash + hitstop + punch na susjedima + sfx`,
+      `klik na oblik = burst + shake + flash + hitstop + val punch-a na susjedima + sfx`,
+      `[4] tween je vidljiv dvaput: val kroz susjede, i kako novi oblik naraste`,
     ].join('\n')
   }
 
