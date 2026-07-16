@@ -2,21 +2,19 @@ import { Container, Graphics, Text } from 'pixi.js'
 import type { Scene } from '../core/scene'
 import type { Input } from '../core/input'
 import { WIDTH, HEIGHT, type GameApp } from '../core/app'
-import { palette, randomAccent, type AccentName } from '../juice/palette'
-import type { Bloom } from '../juice/bloom'
+import { palette, randomAccent, TAU, type AccentName, type Juice, type TweenHandle } from '../juice'
 
 /**
  * Playground - acceptance test, ne demo za druge.
  *
- * Svaki juice modul koji stigne dobiva ovdje svoj toggle (tipke 1-6) i svoju
- * ulogu u klik-reakciji, pa se vidi na ekranu cim nastane. Razlika izmedu
- * "sve off" i "sve on" je cijeli argument ovog projekta.
- *
- * Stanje: bloom [1] radi. Particles, shake, tween, screenfx, audio jos ne
- * postoje - njihovi toggleovi stizu s modulima.
+ * Ovo je alat kojim se presuduje "izgleda li mi dobro". Tipke 1-6 pale i gase
+ * svaki sustav zasebno, 0 je sve off naspram sve on - razlika izmedu ta dva je
+ * cijeli argument ovog projekta, vidljiv u jednom pritisku.
  */
 
 const SHAPE_COUNT = 10
+const NEIGHBOUR_RADIUS = 140
+const RESPAWN_DELAY = 0.6
 
 /** Brzina live tuninga blooma, u jedinicama po sekundi drzanja tipke. */
 const THRESHOLD_RATE = 0.3
@@ -30,6 +28,7 @@ interface Shape {
   vy: number
   radius: number
   accent: AccentName
+  punch: TweenHandle | null
 }
 
 function spawnShape(): Shape {
@@ -44,7 +43,7 @@ function spawnShape(): Shape {
     gfx.rect(-radius, -radius, radius * 2, radius * 2).fill({ color })
   }
 
-  const angle = Math.random() * Math.PI * 2
+  const angle = Math.random() * TAU
   const speed = 80 + Math.random() * 120
 
   return {
@@ -55,6 +54,7 @@ function spawnShape(): Shape {
     vy: Math.sin(angle) * speed,
     radius,
     accent,
+    punch: null,
   }
 }
 
@@ -62,19 +62,114 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max)
 }
 
-export function createPlayground(app: GameApp, input: Input, bloom: Bloom): Scene {
+/**
+ * Zvuk sintetiziran u kodu - template nema nijedan asset (jam pravila o
+ * unaprijed pripremljenim assetima). Ide kroz isti audio.play() put kao pravi
+ * .wav, pa se pitch jitter i mute normalno testiraju.
+ */
+function synthBlip(context: AudioContext, frequency: number, duration: number, noisy: boolean): AudioBuffer {
+  const rate = context.sampleRate
+  const length = Math.floor(rate * duration)
+  const buffer = context.createBuffer(1, length, rate)
+  const data = buffer.getChannelData(0)
+
+  for (let i = 0; i < length; i++) {
+    const t = i / rate
+    const decay = Math.exp(-t * 18)
+    const sample = noisy ? Math.random() * 2 - 1 : Math.sign(Math.sin(TAU * frequency * t))
+    data[i] = sample * decay * 0.3
+  }
+  return buffer
+}
+
+export function createPlayground(app: GameApp, input: Input, juice: Juice): Scene {
+  const { bloom, particles, shake, tweens, screenfx, audio } = juice
+
   const container = new Container()
   const shapes: Shape[] = []
 
-  /** Stanje [0] toggla - sve off naspram sve on, ne obicni toggle po sustavu. */
+  /** Stanje [0] toggla - sve off naspram sve on, ne toggle po sustavu. */
   let allOn = true
 
-  // HUD ide na `ui` - bez blooma, ostaje ostar.
   const hud = new Text({
     text: '',
-    style: { fontFamily: 'monospace', fontSize: 13, fill: palette.ink, lineHeight: 18 },
+    style: { fontFamily: 'monospace', fontSize: 12, fill: palette.ink, lineHeight: 17 },
   })
   hud.position.set(12, 12)
+
+  function addShape(): void {
+    const shape = spawnShape()
+    shapes.push(shape)
+    container.addChild(shape.gfx)
+  }
+
+  /** Jedan klik demonstrira cijeli stack odjednom. */
+  function destroy(shape: Shape): void {
+    const index = shapes.indexOf(shape)
+    if (index < 0) return
+    shapes.splice(index, 1)
+    container.removeChild(shape.gfx)
+    shape.gfx.destroy()
+
+    particles.burst({
+      x: shape.x,
+      y: shape.y,
+      color: palette.accent[shape.accent].bright,
+      count: 24,
+      speed: [80, 320],
+      life: [0.3, 0.7],
+      size: [2, 5],
+      spread: TAU,
+      drag: 0.35,
+    })
+    shake.add(0.35)
+    screenfx.flash(palette.ink, 0.08, 0.45)
+    screenfx.hitstop(0.05)
+    audio.play('hit')
+
+    for (const other of shapes) {
+      if (Math.hypot(other.x - shape.x, other.y - shape.y) > NEIGHBOUR_RADIUS) continue
+      // Otkazi prethodni punch i vrati scale na bazu - inace se dva punch-a
+      // preklope i oblik trajno odluta od svoje velicine.
+      other.punch?.cancel()
+      other.gfx.scale.set(1)
+      other.punch = tweens.punch(other.gfx, 0.35, 0.35)
+      audio.play('pop', { volume: 0.35 })
+    }
+
+    tweens.after(RESPAWN_DELAY, addShape)
+  }
+
+  function handleClick(): void {
+    if (!input.pointer.justDown) return
+    for (const shape of shapes) {
+      const distance = Math.hypot(shape.x - input.pointer.x, shape.y - input.pointer.y)
+      if (distance <= shape.radius) {
+        destroy(shape)
+        return
+      }
+    }
+  }
+
+  function handleToggles(): void {
+    if (input.pressed('1')) bloom.enabled = !bloom.enabled
+    if (input.pressed('2')) particles.enabled = !particles.enabled
+    if (input.pressed('3')) shake.enabled = !shake.enabled
+    if (input.pressed('4')) tweens.enabled = !tweens.enabled
+    if (input.pressed('5')) screenfx.enabled = !screenfx.enabled
+    if (input.pressed('6')) audio.enabled = !audio.enabled
+    if (input.pressed('m')) audio.muted = !audio.muted
+
+    if (input.pressed('0')) {
+      allOn = !allOn
+      bloom.enabled = allOn
+      particles.enabled = allOn
+      shake.enabled = allOn
+      tweens.enabled = allOn
+      screenfx.enabled = allOn
+      audio.enabled = allOn
+    }
+  }
 
   function tuneBloom(dt: number): void {
     let dThreshold = 0
@@ -118,14 +213,22 @@ export function createPlayground(app: GameApp, input: Input, bloom: Bloom): Scen
     }
   }
 
+  function flag(on: boolean): string {
+    return on ? 'ON ' : 'off'
+  }
+
   function drawHud(): void {
-    const fps = Math.round(app.pixi.ticker.FPS)
-    const threshold = bloom.filter.threshold.toFixed(2)
-    const scale = bloom.filter.bloomScale.toFixed(2)
     hud.text = [
-      `${fps} fps`,
-      `[1] bloom ${bloom.enabled ? 'ON ' : 'off'}   threshold ${threshold}   scale ${scale}`,
+      `${Math.round(app.pixi.ticker.FPS)} fps    cestica ${particles.active}`,
+      '',
+      `[1] bloom ${flag(bloom.enabled)}   [2] particles ${flag(particles.enabled)}   [3] shake ${flag(shake.enabled)}`,
+      `[4] tween ${flag(tweens.enabled)}   [5] screenfx ${flag(screenfx.enabled)}   [6] audio ${flag(audio.enabled)}`,
+      `[0] sve ${allOn ? 'OFF' : 'ON'}      [M] mute ${flag(!audio.muted)}`,
+      '',
+      `bloom threshold ${bloom.filter.threshold.toFixed(2)}   scale ${bloom.filter.bloomScale.toFixed(2)}`,
       `strelice gore/dolje = threshold, lijevo/desno = scale`,
+      '',
+      `klik na oblik = burst + shake + flash + hitstop + punch na susjedima + sfx`,
     ].join('\n')
   }
 
@@ -133,11 +236,10 @@ export function createPlayground(app: GameApp, input: Input, bloom: Bloom): Scen
     container,
 
     enter() {
-      for (let i = 0; i < SHAPE_COUNT; i++) {
-        const shape = spawnShape()
-        shapes.push(shape)
-        container.addChild(shape.gfx)
-      }
+      audio.register('hit', synthBlip(audio.context, 180, 0.2, true))
+      audio.register('pop', synthBlip(audio.context, 620, 0.1, false))
+
+      for (let i = 0; i < SHAPE_COUNT; i++) addShape()
       app.ui.addChild(hud)
     },
 
@@ -145,16 +247,13 @@ export function createPlayground(app: GameApp, input: Input, bloom: Bloom): Scen
       app.ui.removeChild(hud)
       container.removeChildren()
       shapes.length = 0
+      particles.clear()
     },
 
     update(dt: number) {
-      if (input.pressed('1')) bloom.enabled = !bloom.enabled
-      if (input.pressed('0')) {
-        allOn = !allOn
-        bloom.enabled = allOn
-      }
-
+      handleToggles()
       tuneBloom(dt)
+      handleClick()
       moveShapes(dt)
       drawHud()
     },

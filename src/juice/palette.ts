@@ -26,6 +26,21 @@ export const palette = {
   },
 } as const
 
+/**
+ * Tehnicke konstante - nisu boje dizajna nego neutralne baze, i nikad se ne
+ * koriste kao boja. Zive ovdje samo zato da pravilo "nijedan hex izvan ovog
+ * filea" ostane doslovno tocno, pa je provjerljivo: grep za `0x` izvan
+ * palette.ts mora biti prazan.
+ */
+export const technical = {
+  /** Bijela baza za generirane teksture i overlaye koji se tintaju. */
+  tintBase: 0xffffff,
+  /** Maska - vrijednost je nebitna, bitna je samo neprozirnost. */
+  maskFill: 0xffffff,
+  /** Trake izvan logickog okvira. */
+  letterbox: 0x000000,
+} as const
+
 export type AccentName = keyof typeof palette.accent
 
 export const accentNames = Object.keys(palette.accent) as AccentName[]

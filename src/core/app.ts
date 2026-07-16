@@ -1,5 +1,5 @@
 import { Application, Container, Graphics } from 'pixi.js'
-import { palette } from '../juice/palette'
+import { palette, technical } from '../juice/palette'
 
 /**
  * Logicka rezolucija. Gameplay kod radi ISKLJUCIVO u ovim koordinatama i nikad
@@ -32,7 +32,7 @@ export async function createApp(): Promise<GameApp> {
   await pixi.init({
     width: window.innerWidth,
     height: window.innerHeight,
-    background: 0x000000, // letterbox trake
+    background: technical.letterbox,
     antialias: true,
     resolution: window.devicePixelRatio || 1,
     autoDensity: true,
@@ -75,7 +75,7 @@ export async function createApp(): Promise<GameApp> {
     mask
       .clear()
       .rect(offsetX, offsetY, WIDTH * scale, HEIGHT * scale)
-      .fill({ color: 0xffffff })
+      .fill({ color: technical.maskFill })
   }
 
   resize()
