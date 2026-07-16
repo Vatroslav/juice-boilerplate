@@ -4,10 +4,27 @@ import type { Loop } from '../core/loop'
 
 /** Koliko trauma padne po sekundi. */
 const DECAY = 1.5
-const MAX_OFFSET = 16
-const MAX_ROTATION = 0.015
-/** Brzina titranja. */
-const FREQUENCY = 18
+
+/**
+ * Specifikacija je trazila ~16 px. Premalo: offset skalira s trauma², pa bi
+ * `add(0.2)` iz iste specifikacije dalo 0.4 px, a `add(0.6)` cetiri piksela -
+ * cijela krivulja bi bila mrtva ispod trauma 0.7. Kvadrat treba raspon da bi
+ * radio ono zbog cega postoji. Uz 36 px: 0.2 → ~1.4 px (jedva mrdne, kako i
+ * treba), 0.6 → ~13 px (solidan udarac), 1.0 → 36 px (nasilno).
+ */
+const MAX_OFFSET = 36
+const MAX_ROTATION = 0.03
+
+const TWO_PI = Math.PI * 2
+
+/**
+ * Frekvencije titranja u HERCIMA. Obje moraju ostati ispod Nyquistove granice
+ * (pola framerata = 30 Hz na 60 fps) - iznad nje se titranje ne uzorkuje kao
+ * titranje nego kao aliasirani sum. Nesumjerljive su namjerno, da se uzorak ne
+ * ponavlja vidljivo.
+ */
+const HZ_A = 7.3
+const HZ_B = 11.7
 
 export interface Shake {
   /** amount 0..1. Tipicno: 0.2 na hit, 0.6 na eksploziju. */
@@ -18,10 +35,10 @@ export interface Shake {
 
 /**
  * Zbroj dvaju sinusa umjesto Math.random() po frameu. Random izgleda zrnato i
- * "buzzy"; ovo je glatko, deterministicno i jednako jeftino.
+ * "buzzy"; ovo je glatko, deterministicno i jednako jeftino. `t` je u sekundama.
  */
 function noise(t: number, seed: number): number {
-  return (Math.sin(t * 12.9898 + seed) + Math.sin(t * 31.7 + seed * 2.3)) * 0.5
+  return (Math.sin(TWO_PI * HZ_A * t + seed) + Math.sin(TWO_PI * HZ_B * t + seed * 2.3)) * 0.5
 }
 
 /**
@@ -57,13 +74,12 @@ export function createShake(world: Container, loop: Loop): Shake {
     // Offset skalira s trauma², ne s traumom. Kvadrat je ono sto ovo cini
     // dobrim: mali hitovi jedva mrdnu, veliki tresu.
     const magnitude = trauma * trauma
-    const t = elapsed * FREQUENCY
 
     world.position.set(
-      WIDTH / 2 + noise(t, 0) * MAX_OFFSET * magnitude,
-      HEIGHT / 2 + noise(t, 5.2) * MAX_OFFSET * magnitude,
+      WIDTH / 2 + noise(elapsed, 0) * MAX_OFFSET * magnitude,
+      HEIGHT / 2 + noise(elapsed, 5.2) * MAX_OFFSET * magnitude,
     )
-    world.rotation = noise(t, 9.7) * MAX_ROTATION * magnitude
+    world.rotation = noise(elapsed, 9.7) * MAX_ROTATION * magnitude
   })
 
   return {

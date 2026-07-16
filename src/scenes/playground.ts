@@ -161,7 +161,9 @@ export function createPlayground(app: GameApp, input: Input, juice: Juice): Scen
       spread: TAU,
       drag: 0.35,
     })
-    shake.add(0.35)
+    // 0.6 = "eksplozija" iz specifikacije. Unistenje oblika jest eksplozija;
+    // prijasnjih 0.35 je bilo nista.
+    shake.add(0.6)
     screenfx.flash(palette.ink, 0.08, 0.45)
     screenfx.hitstop(0.05)
     audio.play('hit')
