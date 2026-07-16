@@ -35,11 +35,16 @@ const RIPPLE_SPEED = 700
 const RESPAWN_DELAY = 0.6
 
 /**
- * Cestica po sekundi po trailu. Deset oblika × 55/s × zivot ~0.55s drzi oko
- * 300-500 aktivnih cestica - tocno raspon u kojem se mjeri fps iz definicije
- * gotovog.
+ * Cestica po sekundi po trailu. Deset oblika × 100/s × zivot ~0.55 s drzi oko
+ * 550 aktivnih - iznad praga od 500 iz definicije gotovog. Bilo je 55, sto je
+ * davalo ~300 i prag se nikad nije stvarno testirao.
  */
-const TRAIL_RATE = 55
+const TRAIL_RATE = 100
+
+/** Koliko se cesto HUD prepisuje. Svaki frame je necitljivo. */
+const HUD_REFRESH = 0.25
+/** Prozor preko kojeg se pamti najgori frame. */
+const FPS_WINDOW = 3
 
 /** Brzina live tuninga blooma, u jedinicama po sekundi drzanja tipke. */
 const THRESHOLD_RATE = 0.3
@@ -122,9 +127,36 @@ export function createPlayground(app: GameApp, input: Input, juice: Juice): Scen
 
   const hud = new Text({
     text: '',
-    style: { fontFamily: 'monospace', fontSize: 12, fill: palette.ink, lineHeight: 17 },
+    style: { fontFamily: 'monospace', fontSize: 15, fill: palette.ink, lineHeight: 21 },
   })
   hud.position.set(12, 12)
+
+  // Pixi-jev ticker.FPS je trenutna vrijednost iz zadnjeg framea - skace svaki
+  // frame i necitljiv je. Ovo je EMA za mirno ocitanje, uz najgori frame iz
+  // zadnja tri sekunde posebno: prosjek sakriva hitcheve, a hitchevi su ono sto
+  // se zapravo trazi.
+  let smoothFps = 60
+  let windowTimer = 0
+  let windowMinFps = Infinity
+  let windowPeakParticles = 0
+  let shownMinFps = 0
+  let shownPeakParticles = 0
+  let hudTimer = HUD_REFRESH
+
+  function trackStats(dt: number): void {
+    const instant = app.pixi.ticker.FPS
+    smoothFps += (instant - smoothFps) * 0.05
+    windowMinFps = Math.min(windowMinFps, instant)
+    windowPeakParticles = Math.max(windowPeakParticles, particles.active)
+
+    windowTimer += dt
+    if (windowTimer < FPS_WINDOW) return
+    shownMinFps = windowMinFps
+    shownPeakParticles = windowPeakParticles
+    windowMinFps = Infinity
+    windowPeakParticles = 0
+    windowTimer = 0
+  }
 
   /**
    * Trail koristi `base` varijantu akcenta, a sam oblik `bright`. Zato jezgra
@@ -293,9 +325,17 @@ export function createPlayground(app: GameApp, input: Input, juice: Juice): Scen
     return on ? 'ON ' : 'off'
   }
 
-  function drawHud(): void {
+  function drawHud(dt: number): void {
+    hudTimer += dt
+    if (hudTimer < HUD_REFRESH) return
+    hudTimer = 0
+
+    const min = shownMinFps > 0 ? String(Math.round(shownMinFps)) : '-'
+    const peak = shownPeakParticles > 0 ? String(shownPeakParticles) : '-'
+
     hud.text = [
-      `${Math.round(app.pixi.ticker.FPS)} fps    cestica ${particles.active}`,
+      `${Math.round(smoothFps)} fps   najgori u 3s: ${min}`,
+      `cestica ${particles.active}   najvise u 3s: ${peak}`,
       '',
       `[1] bloom ${flag(bloom.enabled)}   [2] particles ${flag(particles.enabled)}   [3] shake ${flag(shake.enabled)}`,
       `[4] tween ${flag(tweens.enabled)}   [5] screenfx ${flag(screenfx.enabled)}   [6] audio ${flag(audio.enabled)}`,
@@ -333,7 +373,8 @@ export function createPlayground(app: GameApp, input: Input, juice: Juice): Scen
       tuneBloom(dt)
       handleClick()
       moveShapes(dt)
-      drawHud()
+      trackStats(dt)
+      drawHud(dt)
     },
   }
 }
