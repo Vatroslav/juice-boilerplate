@@ -35,7 +35,6 @@ Performanse su izmjerene i prolaze: **572 cestice uz ukljucen bloom, najgori fra
 
 Preostalo do gotovog:
 
-- Firefox - jos nije probao nitko.
 - Deploy na itch.
 - Napraviti mini-igru iz ovog templatea **bez ijedne izmjene u `core/` i `juice/`**. To je pravi test API-ja; ako igra mora dirati jezgru, jezgra nije gotova.
 
