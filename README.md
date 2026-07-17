@@ -29,14 +29,13 @@ Playground (`src/scenes/playground.ts`) pali i gasi svaki sustav zasebno - razli
 
 ## Stanje
 
-U izradi, ali sve postoji i vrti se. Jezgra i svih sest juice modula rade i prosudeni su u playgroundu (Chrome).
+Jezgra i svih sest juice modula rade i prosudeni su u playgroundu.
 
-Performanse su izmjerene i prolaze: **572 cestice uz ukljucen bloom, najgori frame u tri sekunde 98 fps** (trazi se 60), i to uz klikanje - dakle burst, shake, flash i hitstop u istom frameu. Mjereno na 100 Hz ekranu, pa je 100 vsync cap i pravi strop je jos vise.
+**Performanse prolaze:** 572 cestice uz ukljucen bloom, najgori frame u tri sekunde 98 fps (trazi se 60), i to uz klikanje - dakle burst, shake, flash i hitstop u istom frameu. Mjereno na 100 Hz ekranu, pa je 100 vsync cap i pravi strop je jos vise.
 
-Preostalo do gotovog:
+**API je validiran pravom igrom:** [dodger](https://github.com/Vatroslav/dodger) je nastao iz ovog templatea **bez ijedne izmjene u `core/` i `juice/`** - `git diff --stat HEAD -- src/core src/juice` je prazan. Nista nije falilo i nista se nije moralo zaobici.
 
-- Deploy na itch.
-- Napraviti mini-igru iz ovog templatea **bez ijedne izmjene u `core/` i `juice/`**. To je pravi test API-ja; ako igra mora dirati jezgru, jezgra nije gotova.
+Preostalo: deploy na itch.
 
 ## Licenca
 
