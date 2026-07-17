@@ -1,0 +1,7 @@
+{
+  "target": "Vatroslav/juice-boilerplate",
+  "channel": "html5",
+  "build": "npm run build",
+  "dist": "dist",
+  "versionFrom": "package.json"
+}
