@@ -186,7 +186,7 @@ export function createPlayground(app: GameApp, input: Input, juice: Juice): Scen
     // Ovo je najcistiji demo tweena u playgroundu - dogada se sam, bez bursta i
     // tresenja oko sebe. S ugasenim [4] oblik se samo pojavi, gotov.
     shape.gfx.scale.set(0)
-    shape.anim = tweens.tween(shape.gfx.scale, { x: 1, y: 1 }, 0.35, { ease: 'backOut' })
+    shape.anim = tweens.scaleTo(shape.gfx, 1, 0.35, { ease: 'backOut' })
   }
 
   /** Jedan klik demonstrira cijeli stack odjednom. */
@@ -194,6 +194,11 @@ export function createPlayground(app: GameApp, input: Input, juice: Juice): Scen
     const index = shapes.indexOf(shape)
     if (index < 0) return
     shapes.splice(index, 1)
+    // Prije destroy(): animacija u tijeku bi inace nastavila pisati u objekt
+    // koji vise nema scale. Tweens to sad i sam hvata, ali ostavljati mrtve
+    // tweenove da se vrte je svejedno neuredno - ovo je posao vlasnika objekta.
+    shape.anim?.cancel()
+    shape.anim = null
     shape.trail?.stop()
     container.removeChild(shape.gfx)
     shape.gfx.destroy()

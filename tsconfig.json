@@ -12,7 +12,10 @@
     "verbatimModuleSyntax": true,
     "isolatedModules": true,
     "noEmit": true,
+    // test/ importa `../src/juice/tween.ts` s nastavkom jer ga node pokrece
+    // izravno, bez bundlera.
+    "allowImportingTsExtensions": true,
     "skipLibCheck": true
   },
-  "include": ["src", "vite.config.ts"]
+  "include": ["src", "test", "vite.config.ts"]
 }

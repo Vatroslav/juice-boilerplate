@@ -48,6 +48,12 @@ export interface Tweens {
   tween<T extends object>(target: T, to: TweenTo<T>, duration: number, opts?: TweenOpts): TweenHandle
   /** Scale pop - najcesci juice poziv u praksi. */
   punch(target: Scalable, amount?: number, duration?: number): TweenHandle
+  /**
+   * Scale od trenutnog do zadanog. Meta je OBJEKT, ne njegov `scale` point -
+   * zato sto se tween tada zna sam odbaciti kad objekt umre (vidi `isDestroyed`).
+   * `tween(sprite.scale, { x: 0 })` bi radio isto, ali bi promasio tu zastitu.
+   */
+  scaleTo(target: Scalable, to: number, duration: number, opts?: TweenOpts): TweenHandle
   /** Tajmer kroz loop - postuje timeScale, pa hitstop odgada i njega. */
   after(delay: number, fn: () => void, opts?: { unscaled?: boolean }): TweenHandle
   /**
@@ -60,6 +66,8 @@ export interface Tweens {
 }
 
 interface Entry {
+  /** Objekt u koji `apply` pise. Cuva se samo da se zna je li jos ziv. */
+  target: object
   elapsed: number
   delay: number
   duration: number
@@ -72,6 +80,21 @@ interface Entry {
 
 const NOOP_HANDLE: TweenHandle = { cancel() {} }
 
+/** Tajmeri nemaju metu, a `{}` nikad nije unisten. */
+const NO_TARGET: object = {}
+
+/**
+ * Pixi na `destroy()` postavi `_scale = null`, pa getter `scale` vrati null i
+ * svako daljnje pisanje baci iznimku. Iznimka iz update-a zaledi CIJELU igru:
+ * Pixi trazi sljedeci frame tek nakon sto update prode, pa se ticker nikad vise
+ * ne zakaze. Jedan zaboravljeni tween na mrtvom objektu = crn ekran.
+ *
+ * Obicni objekti nemaju `destroyed`, pa im se ponasanje ovim ne mijenja.
+ */
+function isDestroyed(target: object): boolean {
+  return (target as { destroyed?: boolean }).destroyed === true
+}
+
 export function createTweens(loop: Loop): Tweens {
   const scaledList: Entry[] = []
   const unscaledList: Entry[] = []
@@ -81,6 +104,13 @@ export function createTweens(loop: Loop): Tweens {
     for (let i = list.length - 1; i >= 0; i--) {
       const entry = list[i]
       if (entry === undefined) continue
+
+      // Meta je umrla dok je tween tekao - tiho odbaci, bez onDone (onDone bi
+      // isto pisao u mrtav objekt).
+      if (isDestroyed(entry.target)) {
+        list.splice(i, 1)
+        continue
+      }
 
       entry.elapsed += dt
       if (entry.elapsed < entry.delay) continue
@@ -105,6 +135,9 @@ export function createTweens(loop: Loop): Tweens {
     for (const entry of animations) {
       const i = list.indexOf(entry)
       if (i >= 0) list.splice(i, 1)
+      // Isti razlog kao u step(): apply(1) na mrtvoj meti zaledi igru. Gasenje
+      // tweena tipkom [4] bi inace bilo drugi put do istog crnog ekrana.
+      if (isDestroyed(entry.target)) continue
       entry.apply(1)
       entry.onDone?.()
     }
@@ -150,6 +183,37 @@ export function createTweens(loop: Loop): Tweens {
 
       return attach(
         {
+          target,
+          elapsed: 0,
+          delay: opts.delay ?? 0,
+          duration,
+          ease: eases[opts.ease ?? 'quadOut'],
+          apply,
+          onDone: opts.onDone,
+          timer: false,
+        },
+        opts.unscaled ?? false,
+      )
+    },
+
+    scaleTo(target: Scalable, to: number, duration: number, opts: TweenOpts = {}): TweenHandle {
+      const fromX = target.scale.x
+      const fromY = target.scale.y
+
+      const apply = (progress: number): void => {
+        target.scale.x = fromX + (to - fromX) * progress
+        target.scale.y = fromY + (to - fromY) * progress
+      }
+
+      if (!enabled) {
+        apply(1)
+        opts.onDone?.()
+        return NOOP_HANDLE
+      }
+
+      return attach(
+        {
+          target,
           elapsed: 0,
           delay: opts.delay ?? 0,
           duration,
@@ -179,6 +243,7 @@ export function createTweens(loop: Loop): Tweens {
 
       return attach(
         {
+          target,
           elapsed: 0,
           delay: 0,
           duration,
@@ -197,6 +262,7 @@ export function createTweens(loop: Loop): Tweens {
     after(delay: number, fn: () => void, opts: { unscaled?: boolean } = {}): TweenHandle {
       return attach(
         {
+          target: NO_TARGET,
           elapsed: 0,
           delay,
           duration: 0,
